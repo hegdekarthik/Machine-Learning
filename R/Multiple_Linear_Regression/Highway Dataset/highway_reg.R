@@ -1,4 +1,4 @@
-#Please read 'readme' file to find more about the dataset.
+#Linear Regression
 
 rm(list = ls())
 
