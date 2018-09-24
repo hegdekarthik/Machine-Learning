@@ -1,64 +1,106 @@
+
+#Clear the workspace
 rm(list = ls())
 
-#Read the data 
-movie_data = read.table("Documents/PGP-DSE/movie_dataset.txt", header = FALSE, sep = "|",fill = TRUE, quote = "\"")
-colnames(movie_data) = c("ID","Title","ReleaseDate","VideoReleaseDate","IMDB","Unknown","Action","Adventure","Animation","Children","Comedy","Crime","Documentary","Drama","Fantasy","FlimNoir","Horror","Musical","Mystery","Romance","SciFi","Thriller","War","Western")
-View(movie_data)
-table(movie_data$Thriller)
+## Importing packages
+library(ggplot2)
+library(cluster)
+library(fpc)
+library(factoextra)
+library(tidyverse) # metapackage with lots of helpful functions
+
+## Reading in files
+movie_data = read.table("../input/movie_dataset.txt", header = FALSE, sep = "|",fill = TRUE, quote = "\"")
+
+#Since it has no columns, enter the column names
+colnames(movie_data) = c("ID","Title","ReleaseDate","VideoReleaseDate",
+                        "IMDB","Unknown","Action","Adventure","Animation",
+                        "Children","Comedy","Crime","Documentary","Drama",
+                        "Fantasy","FlimNoir","Horror","Musical","Mystery",
+                        "Romance","SciFi","Thriller","War","Western")
+## Just a initial structure of the dataset
+head(movie_data)
 
 #Check for NA and empty
 sapply(movie_data, function(x){sum(is.na(x))})
 sapply(movie_data, function(x){sum(x == "")})
 
+#Remove the duplicate rows from the data
+
 #Get unique rows
-movie_update = unique(movie_data)
+movie_unique = unique(movie_data)
 
-#Get the rows which has dupliacte entries
-which(duplicated(movie_data$Title))
-movie_data[duplicated(movie_data$Title),]
-movie_data[movie_data$Title == 'Chasing Amy (1997)',]
+#Clustering of the data
 
-#Do the clustering process
-movie_required = movie_update[,6:ncol(movie_update)]
+#METHOD-1
 
-distance_k = dist(movie_required, method = 'euclidean')
-mov.cl = hclust(distance_k, method = 'ward.D')
+#Hierarchical Clustering
+movie_genres = movie_unique[,6:ncol(movie_unique)]
+
+#Find the euclidean distance
+cluster_distance = dist(movie_genres, method = 'euclidean')
+mov.cl = hclust(cluster_distance, method = 'ward.D')
+
+#Plot the cluster to decide how many number of division to make
 plot(mov.cl)
 
+#After looking into the plot I have deided to make 6 clusters. Let's see how does it look
 movie.cluster = cutree(mov.cl,6)
-rect.hclust(mov.cl,k=6, border = 'red')
+#rect.hclust(mov.cl,k=6, border = 'red')
+
+#Look at the categarization of all movies
 table(movie.cluster)
 
 #Update new column
-movie_update$cluster = movie.cluster
+movie_unique$cluster = movie.cluster
 
-#Check the number 
-sapply(movie_update[,6:ncol(movie_update)],function(x){tapply(x,movie_update$cluster,mean)})
+#Check the percentage of genre of movies which falls in each category/genre
+sapply(movie_unique[,6:ncol(movie_unique)],function(x){tapply(x*100,movie_unique$cluster,mean)})
 
-#Check the % for particular type of movie
-tapply(movie_update$Action,movie.cluster,mean)*100
+#Visualisations
+plotcluster(movie_genres, movie_unique$cluster)
 
-#Write it to csv
-write.csv(movie_update[,c("Title","cluster")], "movie_cluster.csv", row.names = T)
-sum(tapply(movie_update$Action,movie.cluster,mean)*100)
 
-## K-Means 
+#Write it to csv to have a broader look of data
+write.csv(movie_unique[,c("Title","cluster")], "movie_hierarchical_cluster.csv", row.names = T)
+
+
+#METHOD-2
+
+#K-means clustering
+
+#Since we can't decide the value of k directly, let's look into total.withinss of each clusters and the elbow plot
+#and then let's decide the value of k.
 set.seed(1)
-mov.fit = kmeans(movie_required,10, nstart = 10, iter.max = 10)
+tot_ss = c()
+
+#Run a for loop to get the best value of k
+for (i in seq(1,10,1)){
+  mov.fit_temp = kmeans(movie_genres,i)
+  tot_ss = c(tot_ss, mov.fit_temp$tot.withinss)
+  
+}
+
+#Plot the elbow curve
+plot(x=seq(1,10,1),y=tot_ss,type = 'l')
+
+#Perform K-means Clustering with the value of k=6
+mov.fit = kmeans(movie_genres,6, nstart = 8, iter.max = 10)
 mov.fit$cluster
 
-#SOFT CLUSTERING METHOD
-#Fuzzy C means
-library(factoextra)
-fviz_silhouette()
+#Since we already have the Cluster column, overwrite the same column to update new value of cluster.
+movie_unique$cluster = NULL
+movie_unique$cluster = mov.fit$cluster
 
-## Fuzzy C means for Soft Clustering
-movie.dist = dist(movie_required)
-library(cluster)
-FANNY = fanny(as.matrix(movie.dist),k=10,maxit=2000)
-names(FANNY)
-head(FANNY$membership)
-table(FANNY$clustering)
-plot(FANNY)
 
-View(movie_required)
+# Again check the percentage of genre of movies which falls under respective cluster
+sapply(movie_unique[,6:ncol(movie_unique)],function(x){tapply(x*100,movie_unique$cluster,mean)})
+
+#Visualisation
+#Silouhette
+sil <- silhouette(mov.fit$cluster, dist(movie_genres))
+fviz_silhouette(sil)
+
+#Write the output to a CSV file to check the clean data
+write.csv(movie_unique[,c("Title","cluster")], "movie_kmeans_cluster.csv", row.names = T)
+
